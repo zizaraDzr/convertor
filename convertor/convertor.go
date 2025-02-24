@@ -9,63 +9,72 @@ import (
 	"strings"
 )
 
-func getExchangesRates(fromCurrency string, toCurrency string) error {
-	parametrs := fromCurrency + "," + toCurrency
-	fmt.Println("urparametrsl:", parametrs)
-	url := fmt.Sprintf("https://api.frankfurter.dev/v1/latest?symbols=%s", parametrs)
+type ExchangeRates struct {
+	Amount float64            `json:"amount"`
+	Base   string             `json:"base"`
+	Date   string             `json:"date"`
+	Rates  map[string]float64 `json:"rates"`
+}
+
+func getExchangesRates(fromCurrency string, toCurrency string) (*ExchangeRates, error) {
+	url := fmt.Sprintf("https://api.frankfurter.dev/v1/latest?base=%s&symbols=%s", fromCurrency, toCurrency)
 	fmt.Println("url:", url)
 	resp, err := http.Get(url)
-	for {
-
-		bs := make([]byte, 1014)
-		n, err := resp.Body.Read(bs)
-		fmt.Println(string(bs[:n]))
-
-		if n == 0 || err != nil {
-			break
-		}
-	}
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("ошибка запроса: %w", err)
 	}
 	defer resp.Body.Close()
-	fmt.Print(parametrs)
-	fmt.Print(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ошибка: сервер вернул статус %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("ошибка чтения тела ответа: %w", err)
 	}
-	var rates string
-	if err := json.Unmarshal(body, &rates); err != nil {
-		return err
+	var result ExchangeRates
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("ошибка разбора JSON: %w", err)
 	}
-	fmt.Print(rates)
-	return err
+	return &result, nil
 }
 func main() {
 	// Исходная валюта
+	fmt.Print("Соотношение евро к другим валютам\n")
 	fmt.Println("Введите исходную валюту (например USD)")
 	var fromCurrency string
 	fmt.Scanln(&fromCurrency)
 	fromCurrency = strings.ToUpper(fromCurrency)
-	fmt.Println("Введите сумму ", fromCurrency)
-
-	// сумма валюты
-	var countCurrencyStr string
-	fmt.Scanln(&countCurrencyStr)
-	countCurrencyStr = strings.ReplaceAll(countCurrencyStr, ",", ".")
-	countCurrency, err := strconv.ParseFloat(countCurrencyStr, 64)
-	if err != nil {
-		fmt.Println("не число ", countCurrency)
-		return
-	}
 
 	// Валюту в которую надо перевести
-	fmt.Println("Введите Валюту в которую надо перевести (например RUB)")
+	fmt.Println("Введите Валюту в которую надо перевести (например GBP)")
 	var toCurrency string
 	fmt.Scanln(&toCurrency)
 	toCurrency = strings.ToUpper(toCurrency)
 
+	// сумма валюты
+	fmt.Println("Введите сумму ")
+	var countCurrency string
+	fmt.Scanln(&countCurrency)
+	countCurrency = strings.ReplaceAll(countCurrency, ",", ".")
+	amount, err := strconv.ParseFloat(countCurrency, 64)
+	if err != nil {
+		fmt.Println("не число ", amount)
+		return
+	}
 	// функция получения курса валют
-	getExchangesRates(fromCurrency, toCurrency)
+	rates, err := getExchangesRates(fromCurrency, toCurrency)
+	if err != nil {
+		fmt.Println("ошибка в получении курса валют ", err)
+		return
+	}
+	res, found := rates.Rates[toCurrency]
+	if !found {
+		fmt.Println("нет такой валюты ", toCurrency)
+		return
+	}
+	res = amount * res
+
+	fmt.Printf("%g %s = %.2f %s", amount, fromCurrency, res, toCurrency)
 }
